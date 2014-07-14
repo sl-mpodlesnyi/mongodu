@@ -6,8 +6,7 @@ from json import loads, dumps
 
 db_fields = ['dataSize', 'storageSize', 'indexSize', 'fileSize']
 db_sum_fields = ['indexSize', 'fileSize', 'indexSize']
-collection_fields = ['storageSize', 'lastExtentSize', 'totalIndexSize', 'paddingFactor']
-collection_sum_fields = ['lastExtentSize', 'totalIndexSize']
+collection_fields = ['storageSize', 'lastExtentSize', 'totalIndexSize', 'paddingFactor', 'indexSizes']
 
 METRICSYS = {
         'b': 1,
@@ -31,20 +30,20 @@ class MongoDiskUsage():
         result = {}
         dbstats = db.command('dbstats')
         result['status'] = { i: dbstats[i] for i in db_fields }
-        result['collstats'], result['dusize'] = self.__collstatus__(db)
+        result['collections'], result['duStorageSize'], result['duIndexSize'] = self.__collstatus__(db)
         return result
 
     def __collstatus__(self, db):
         result = {}
         size = 0
+        indexsize = 0
         db.read_preference = pymongo.ReadPreference.SECONDARY
         for collection in db.collection_names():
             collstats = db.command("collstats", collection)
-            size += sum([ float(collstats[s]) for s in collection_sum_fields ])
-            result[collection] = {}
-            for stats in collection_fields:
-                result[collection][stats] = collstats[stats]
-        return result, size
+            size += float(collstats['lastExtentSize'])
+            indexsize += float(collstats['totalIndexSize'])
+            result[collection] = { stats: collstats[stats] for stats in collection_fields }
+        return result, size, indexsize
 
     def get(self, host, dbname=None):
         ''' Run get data
@@ -63,22 +62,31 @@ class MongoDiskUsage():
 
     def put(self, data):
         du = {}
-        dbsize = sum([ float(data[i]['dusize']) for i in list(data.keys())])
-        for i in list(data.keys()):
-            du[i] = {'size': round(float(data[i]['status']['fileSize'] / self._unit), 2), 'du':
-                    round(float(data[i]['dusize']) / self._unit, 2), '%': round((float(data[i]['dusize']) / dbsize)
-                    * 100, 2), 'collections': {}}
-            for j in list(data[i]['collstats'].keys()):
-                realc = data[i]['collstats'][j]
-                s = sum([ float(realc[c]) for c in collection_sum_fields ])
-                p = (s / dbsize) * 100
-                padding = float(realc['paddingFactor'])
-                if padding > 1.5 or p > self._limit:
-                    du[i]['collections'][j] = {}
+        dbsize = sum([ float(data_value['duStorageSize']) for data_key, data_value in data.items()])
+        isize = sum([ float(data_value['duIndexSize']) for data_key, data_value in data.items()])
+        for data_key, data_value in data.items():
+            du[data_key] = {}
+            du[data_key]['size'] = round(float(data_value['status']['fileSize'] / self._unit), 2)
+            du[data_key]['duStorageSize'] = round(float(data_value['duStorageSize']) / self._unit, 2)
+            du[data_key]['duIndexSize'] = round(float(data_value['duIndexSize']) / self._unit, 2)
+            du[data_key]['%'] = round((float(data_value['duStorageSize']) / dbsize) * 100, 2)
+            du[data_key]['i%'] = round((float(data_value['duIndexSize']) / isize) * 100, 2)
+            du[data_key]['collections'] = {}
+            du_key_collections = du[data_key]['collections']
+            for collections_key, collections_value in data_value['collections'].items():
+                size = float(collections_value['lastExtentSize'])
+                indexsize = float(collections_value['totalIndexSize'])
+                p = (size / dbsize) * 100
+                pi = (indexsize / isize) * 100
+                padding = float(collections_value['paddingFactor'])
+                if padding > 1.5 or p > self._limit or pi > self._limit:
+                    du_key_collections[collections_key] = {}
                 if padding > 1.5:
-                    du[i]['collections'][j]['padding size'] = (s * padding) - s
+                    du_key_collections[collections_key]['padding size'] = (size * padding) - size
                 if p > self._limit:
-                    du[i]['collections'][j]['%'] = round(p, 2)
+                    du_key_collections[collections_key]['%'] = round(p, 2)
+                if pi > self._limit:
+                    du_key_collections[collections_key]['i%'] = round(pi, 2)
         return du
 
 if __name__ == '__main__':
