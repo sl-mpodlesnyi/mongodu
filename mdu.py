@@ -40,7 +40,7 @@ class MongoDiskUsage():
         db.read_preference = pymongo.ReadPreference.SECONDARY
         for collection in db.collection_names():
             collstats = db.command("collstats", collection)
-            size += float(collstats['lastExtentSize'])
+            size += float(collstats['storageSize'])
             indexsize += float(collstats['totalIndexSize'])
             result[collection] = { stats: collstats[stats] for stats in collection_fields }
         return result, size, indexsize
@@ -69,12 +69,13 @@ class MongoDiskUsage():
             du[data_key]['size'] = round(float(data_value['status']['fileSize'] / self._unit), 2)
             du[data_key]['duStorageSize'] = round(float(data_value['duStorageSize']) / self._unit, 2)
             du[data_key]['duIndexSize'] = round(float(data_value['duIndexSize']) / self._unit, 2)
+            du[data_key]['EmptySize'] = round((float(data_value['status']['fileSize']) - float(data_value['status']['storageSize'])) / self._unit, 2)
             du[data_key]['%'] = round((float(data_value['duStorageSize']) / dbsize) * 100, 2)
             du[data_key]['i%'] = round((float(data_value['duIndexSize']) / isize) * 100, 2)
             du[data_key]['collections'] = {}
             du_key_collections = du[data_key]['collections']
             for collections_key, collections_value in data_value['collections'].items():
-                size = float(collections_value['lastExtentSize'])
+                size = float(collections_value['storageSize'])
                 indexsize = float(collections_value['totalIndexSize'])
                 p = (size / dbsize) * 100
                 pi = (indexsize / isize) * 100
