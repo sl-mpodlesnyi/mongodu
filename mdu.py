@@ -83,7 +83,7 @@ class MongoDiskUsage():
                 if padding > 1.5 or p > self._limit or pi > self._limit:
                     du_key_collections[collections_key] = {}
                 if padding > 1.5:
-                    du_key_collections[collections_key]['padding size'] = (size * padding) - size
+                    du_key_collections[collections_key]['padding size'] = round(((size * padding) - size) / self._unit, 2)
                 if p > self._limit:
                     du_key_collections[collections_key]['%'] = round(p, 2)
                 if pi > self._limit:
